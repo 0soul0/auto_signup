@@ -5,7 +5,7 @@ import HttpAgent, { HttpsAgent } from 'agentkeepalive';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
-
+import { readFile } from 'fs/promises';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -181,21 +181,23 @@ app.post('/api/execute-sniper', async (req: Request, res: Response) => {
             }
 
             const INFO_URL = `https://register.tpech.org/conferences/${conferenceSlug}`;
+            const PREVIEW_URL = `https://register.tpech.org/conferences/${conferenceSlug}/register/preview`;
             const REGISTER_URL = `https://register.tpech.org/conferences/${conferenceSlug}/register`;
             const CONFIRM_URL = `https://register.tpech.org/conferences/${conferenceSlug}/register/confirm`;
 
             pushLog(taskId, "INFO", `發送第一階段請求...`);
             // Step 1 GET: 抓取 CSRF Token
-            const resRegister = await got.get(INFO_URL, {
+            const resRegister = await fetch(INFO_URL, {
+                method: "GET",
                 headers: {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                     "Cookie": cookieHeader,
                     "Referer": TARGET_URL
-                },
-                throwHttpErrors: false,
-                agent: keepaliveAgent
+                }
             });
-            const htmlReg = resRegister.body;
+
+            // 解析 HTML 回應內容
+            const htmlReg = await resRegister.text();
             const csrfToken = extractInputValue(htmlReg, "_token");
 
             if (!csrfToken) {
@@ -206,32 +208,39 @@ app.post('/api/execute-sniper', async (req: Request, res: Response) => {
             }
 
             // Step 1 POST: 上傳檔案(使用 Node 原生 FormData 與 Blob)
-            const fileBlob = new Blob([new Uint8Array(excelBuffer)], {
-                type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-            });
+            const excelFile = new File(
+                [new Uint8Array(excelBuffer)],
+                "registration.xlsx",
+                { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
+            );
 
             const formStep1 = new FormData();
             formStep1.append("_token", csrfToken);
-            formStep1.append("district_id", districtId);
-            formStep1.append("church_id", churchId);
-            formStep1.append("registration_form", fileBlob, 'form.xlsx');
+            formStep1.append("district_id", String(districtId));
+            formStep1.append("church_id", String(churchId));
+            formStep1.append("registration_form", excelFile, 'form.xlsx');
 
             pushLog(taskId, "INFO", `token:${csrfToken}`);
+            pushLog(taskId, "INFO", `REGISTER_URL:${REGISTER_URL}`);
 
-            const step1Response = await got.post(REGISTER_URL, {
-                body: formStep1,
+            const step1Response = await fetch(REGISTER_URL, {
+                method: "POST",
                 headers: {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                     "Cookie": cookieHeader,
-                    "Referer": REGISTER_URL
-                    // ⚠️ 自動處理 Content-Type，不需再傳入 ...formStep1.getHeaders()
+                    "Referer": REGISTER_URL,
+                    "X-Requested-With": "XMLHttpRequest",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+                    // ⚠️ 注意：使用原生 fetch + FormData 時，千萬不要手動加上 Content-Type 標頭！
+                    // 瀏覽器/Node 核心會自動加上含有正確 boundary 的 multipart/form-data
                 },
-                throwHttpErrors: false,
-                agent: keepaliveAgent
+                body: formStep1
             });
 
-            const htmlConfirm = step1Response.body;
+            const htmlConfirm = await step1Response.text();
+
             const previewToken = extractInputValue(htmlConfirm, "preview_token");
+
 
             if (!previewToken) {
                 pushLog(taskId, "WARN", `⚠️ 第 ${attempt} 次嘗試：第一階段表單送出無回應或被退回，${RETRY_INTERVAL_MS}ms 後補刀...`);
@@ -248,24 +257,25 @@ app.post('/api/execute-sniper', async (req: Request, res: Response) => {
             formStep2.append("preview_token", previewToken);
 
             pushLog(taskId, "INFO", `發送最終確認請求...`);
-            const finalResponse = await got.post(CONFIRM_URL, {
-                body: formStep2,
+            const finalResponse = await fetch(CONFIRM_URL, {
+                method: "POST",
                 headers: {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                     "Cookie": cookieHeader,
-                    "Referer": REGISTER_URL
-                    // ⚠️ 自動處理 Content-Type，不需再傳入 ...formStep2.getHeaders()
+                    "Referer": REGISTER_URL,
+                    "X-Requested-With": "XMLHttpRequest",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+                    // ⚠️ 使用原生 fetch 搭配 FormData 時，切勿手動加上 Content-Type 標頭
                 },
-                throwHttpErrors: false,
-                agent: keepaliveAgent
+                body: formStep2
             });
 
-            if (finalResponse.statusCode === 200 || finalResponse.statusCode === 302) {
+            if (finalResponse.status === 200 || finalResponse.status === 302) {
                 pushLog(taskId, "SUCCESS", "🎉🎉🎉 恭喜！秒殺成功，已完成最終報名送出！");
                 isSuccess = true;
                 break;
             } else {
-                pushLog(taskId, "ERROR", `❌ 第二階段失敗，HTTP Status: ${finalResponse.statusCode}`);
+                pushLog(taskId, "ERROR", `❌ 第二階段失敗，HTTP Status: ${finalResponse.status}`);
                 await new Promise(resolve => setTimeout(resolve, RETRY_INTERVAL_MS));
             }
         }
