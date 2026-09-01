@@ -374,7 +374,7 @@ async function performLogin(taskId: string, loginUrl: string, email: string, pas
         return { success: false, error: "登入發送過程異常: " + e.toString() };
     }
 
-    return { success: false, error: "登入未成功，請嘗試改用「Cookie 認證模式」。" };
+    return { success: false, error: "登入未成功，帳號密碼錯誤或是請嘗試改用「Cookie 認證模式」。" };
 }
 
 function extractInputValue(html: string, name: string): string | null {
