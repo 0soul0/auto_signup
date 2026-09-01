@@ -192,6 +192,7 @@ app.post('/api/execute-sniper', async (req: Request, res: Response) => {
                 headers: {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                     "Cookie": cookieHeader,
+                    "Cache-Control": "no-cache",
                     "Referer": TARGET_URL
                 }
             });
@@ -228,6 +229,7 @@ app.post('/api/execute-sniper', async (req: Request, res: Response) => {
                 headers: {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                     "Cookie": cookieHeader,
+                    "Cache-Control": "no-cache",
                     "Referer": REGISTER_URL,
                     "X-Requested-With": "XMLHttpRequest",
                     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
@@ -263,6 +265,7 @@ app.post('/api/execute-sniper', async (req: Request, res: Response) => {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                     "Cookie": cookieHeader,
                     "Referer": REGISTER_URL,
+                    "Cache-Control": "no-cache",
                     "X-Requested-With": "XMLHttpRequest",
                     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
                     // ⚠️ 使用原生 fetch 搭配 FormData 時，切勿手動加上 Content-Type 標頭
