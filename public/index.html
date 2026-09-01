@@ -1,0 +1,688 @@
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>搶票平台</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #f0f4f9;
+            --panel-bg: #ffffff;
+            --border-cyan: #0070f3;
+            --glow-cyan: rgba(0, 112, 243, 0.25);
+            --terminal-green: #008a4c;
+            --glow-green: rgba(0, 138, 76, 0.25);
+            --cyber-pink: #d90429;
+            --glow-pink: rgba(217, 4, 41, 0.25);
+            --text-main: #0f172a;
+            --text-dim: #64748b;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            background-image:
+                radial-gradient(circle at 50% 0%, rgba(0, 112, 243, 0.08) 0%, transparent 60%),
+                linear-gradient(rgba(0, 112, 243, 0.04) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 112, 243, 0.04) 1px, transparent 1px);
+            background-size: 100% 100%, 24px 24px, 24px 24px;
+            color: var(--text-main);
+            font-family: 'JetBrains Mono', monospace, sans-serif;
+            min-height: 100vh;
+            position: relative;
+        }
+
+        /* 輕量微弱網格質感 */
+        body::before {
+            content: " ";
+            display: block;
+            position: fixed;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            right: 0;
+            background: linear-gradient(rgba(255, 255, 255, 0) 50%, rgba(0, 112, 243, 0.02) 50%);
+            z-index: 999;
+            background-size: 100% 4px;
+            pointer-events: none;
+        }
+
+        .cyber-header {
+            border-bottom: 2px solid var(--border-cyan);
+            padding-bottom: 12px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .cyber-title {
+            color: #0052cc;
+            font-weight: 800;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            font-size: 1.35rem;
+            margin: 0;
+        }
+
+        .cyber-badge {
+            background: rgba(0, 112, 243, 0.08);
+            border: 1px solid var(--border-cyan);
+            color: #0052cc;
+            padding: 2px 8px;
+            font-size: 0.75rem;
+            border-radius: 2px;
+            font-weight: 700;
+        }
+
+        .card {
+            background: var(--panel-bg);
+            border: 1px solid rgba(0, 112, 243, 0.3);
+            border-radius: 6px;
+            box-shadow: 0 10px 30px rgba(0, 82, 204, 0.08), 0 1px 3px rgba(0, 0, 0, 0.05);
+            position: relative;
+        }
+
+        .card::after {
+            content: '';
+            position: absolute;
+            bottom: -1px;
+            right: -1px;
+            width: 16px;
+            height: 16px;
+            background: var(--border-cyan);
+            clip-path: polygon(100% 0, 100% 100%, 0 100%);
+        }
+
+        .form-label {
+            color: #0052cc;
+            font-size: 0.82rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+            font-weight: 700;
+        }
+
+        .form-control,
+        .form-select {
+            background-color: #f8fafc !important;
+            border: 1px solid #cbd5e1 !important;
+            color: #0f172a !important;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            border-radius: 4px;
+            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.03);
+            transition: all 0.2s ease;
+        }
+
+        .form-control:focus,
+        .form-select:focus {
+            background-color: #ffffff !important;
+            border-color: #0070f3 !important;
+            box-shadow: 0 0 0 3px rgba(0, 112, 243, 0.15) !important;
+            outline: none;
+        }
+
+        .form-control::placeholder {
+            color: #94a3b8;
+        }
+
+        select option {
+            background-color: #ffffff;
+            color: #0f172a;
+        }
+
+        .auth-box {
+            background: #f1f5f9;
+            border: 1px dashed #cbd5e1;
+            border-radius: 6px;
+            padding: 16px;
+        }
+
+        .form-check-input {
+            background-color: #ffffff;
+            border-color: #94a3b8;
+        }
+
+        .form-check-input:checked {
+            background-color: #0070f3;
+            border-color: #0070f3;
+            box-shadow: 0 0 6px rgba(0, 112, 243, 0.3);
+        }
+
+        .form-check-label {
+            color: #1e293b;
+            font-size: 0.88rem;
+            font-weight: 600;
+        }
+
+        .form-text {
+            color: var(--text-dim) !important;
+            font-size: 0.75rem;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #0070f3 0%, #0052cc 100%);
+            border: none;
+            color: #ffffff;
+            font-weight: 800;
+            font-family: 'JetBrains Mono', monospace;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-radius: 4px;
+            box-shadow: 0 4px 14px rgba(0, 112, 243, 0.35);
+            transition: all 0.2s ease;
+            clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: linear-gradient(135deg, #0052cc 0%, #003da6 100%);
+            box-shadow: 0 6px 20px rgba(0, 112, 243, 0.5);
+            color: #ffffff;
+            transform: translateY(-1px);
+        }
+
+        .btn-primary:disabled {
+            background: #94a3b8;
+            color: #f1f5f9;
+            box-shadow: none;
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #e11d48 0%, #be123c 100%);
+            border: none;
+            color: #ffffff;
+            font-weight: 800;
+            font-family: 'JetBrains Mono', monospace;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-radius: 4px;
+            box-shadow: 0 4px 14px rgba(225, 29, 72, 0.35);
+            transition: all 0.2s ease;
+            clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+        }
+
+        .btn-danger:hover:not(:disabled) {
+            background: linear-gradient(135deg, #be123c 0%, #9f1239 100%);
+            box-shadow: 0 6px 20px rgba(225, 29, 72, 0.5);
+        }
+
+        #logBox {
+            background: #0f172a;
+            color: #38edf6;
+            font-family: 'JetBrains Mono', monospace;
+            height: 500px;
+            overflow-y: auto;
+            padding: 14px;
+            border: 1px solid #0070f3;
+            border-radius: 4px;
+            box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.5);
+            font-size: 0.85rem;
+            line-height: 1.5;
+        }
+
+        #logBox::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        #logBox::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+
+        #logBox::-webkit-scrollbar-thumb {
+            background: #0070f3;
+            border-radius: 3px;
+        }
+
+        .timer-display {
+            font-size: 3.2rem;
+            font-weight: 800;
+            color: #e11d48;
+            font-family: 'JetBrains Mono', monospace;
+            text-shadow: 0 2px 10px rgba(225, 29, 72, 0.2);
+            letter-spacing: 2px;
+        }
+
+        .pulse-text {
+            animation: pulse 1.5s infinite alternate;
+        }
+
+        @keyframes pulse {
+            0% {
+                opacity: 0.7;
+            }
+
+            100% {
+                opacity: 1;
+            }
+        }
+    </style>
+</head>
+
+<body class="py-4">
+    <div class="container" style="max-width: 850px;">
+
+        <!-- 頁面 1: 參數輸入與上傳表單 -->
+        <div id="setupPage" class="card p-4">
+            <div class="cyber-header">
+                <h3 class="cyber-title">⚡ 搶票平台</h3>
+                <span class="cyber-badge">SYS_ONLINE</span>
+            </div>
+            <form id="configForm">
+
+
+                <div class="row">
+                    <div class="col-6 mb-3">
+                        <label class="form-label">重試次數</label>
+                        <div id="retryContainer">
+                            <input type="text" class="form-control" name="retryCount" placeholder="請輸入重試次數" value="15"
+                                required>
+                        </div>
+                    </div>
+
+                    <div class="col-6 mb-3">
+                        <label class="form-label">重試次數間隔(毫秒)</label>
+                        <div id="retryIntervalContainer">
+                            <input type="text" class="form-control" name="retryInterval" placeholder="請輸入重試次數間隔(毫秒)"
+                                value="100" required>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">提前發射偏移量 (秒)</label>
+                    <input type="number" step="0.01" class="form-control" name="offsetSeconds" id="offsetSeconds"
+                        value="0.08" required>
+                </div>
+
+
+                <!-- 1. 開搶時間 -->
+                <div class="mb-3">
+                    <label class="form-label font-weight-bold">開搶目標時間 (台灣時間 GMT+8)</label>
+                    <input type="datetime-local" class="form-control" id="datetimePicker" name="datetimePicker"
+                        required>
+                    <input type="hidden" name="targetTimeStr" id="targetTimeStr">
+                </div>
+
+                <!-- 2. District & Church ID -->
+                <div class="row">
+                    <div class="col-6 mb-3">
+                        <label class="form-label">選擇大區 (District)</label>
+                        <select id="district_id" name="districtId" required class="form-select"
+                            onchange="handleDistrictChange(this.value)">
+                            <option value="">選擇大區</option>
+                            <option value="1">城中區</option>
+                            <option value="2">中山大同區</option>
+                            <option value="3">信基區</option>
+                            <option value="4">港湖區</option>
+                            <option value="5">士林區</option>
+                            <option value="6">北投區</option>
+                            <option value="7">大安區</option>
+                            <option value="8">文山一區</option>
+                            <option value="9">文山二區</option>
+                            <option value="10">文山三區</option>
+                            <option value="11">海山大區</option>
+                            <option value="12">雙和大區</option>
+                            <option value="13">新汐大區</option>
+                            <option value="14">重新一大區</option>
+                            <option value="15">重新二大區</option>
+                            <option value="16">桃園市北區</option>
+                            <option value="17">桃園市南區</option>
+                            <option value="18">竹苗區</option>
+                            <option value="19">台中市召會</option>
+                            <option value="20">彰投區</option>
+                            <option value="21">雲嘉區</option>
+                            <option value="22">台南市召會</option>
+                            <option value="23">高屏澎區</option>
+                            <option value="24">基宜</option>
+                            <option value="25">花東</option>
+                            <option value="26">海外</option>
+                            <option value="27">其他</option>
+                        </select>
+                    </div>
+
+                    <div class="col-6 mb-3">
+                        <label class="form-label">召會/會所 (Church ID)</label>
+                        <div id="churchContainer">
+                            <input type="text" class="form-control" name="churchId" placeholder="請先選擇大區" required>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">上傳報名檔 (.xlsx)</label>
+                    <input type="file" class="form-control" name="excelFile" accept=".xlsx" required>
+                </div>
+
+                <!-- 身份驗證切換 -->
+                <div class="mb-3 auth-box">
+                    <label class="form-label font-weight-bold">🔑 身份驗證方式</label>
+                    <div class="d-flex gap-3 mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="authMode" id="authAccount"
+                                value="account" checked onchange="toggleAuthMode('account')">
+                            <label class="form-check-label" for="authAccount">使用帳號密碼登入</label>
+                        </div>
+
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="authMode" id="authCookie" value="cookie"
+                                onchange="toggleAuthMode('cookie')">
+                            <label class="form-check-label" for="authCookie">使用 Cookie 認證</label>
+                        </div>
+                    </div>
+
+                    <!-- Cookie 區域 -->
+                    <div id="cookieSection" class="d-none">
+                        <div class="mb-2">
+                            <label class="form-label">Cookie: _session</label>
+                            <textarea class="form-control" name="cookieSession" id="cookieSession" rows="2"
+                                placeholder="eyJpdiI6..."></textarea>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">Cookie: cf_clearance (選擇性)</label>
+                            <textarea class="form-control" name="cookieCf" rows="2"
+                                placeholder="hOScTDXF..."></textarea>
+                        </div>
+                    </div>
+
+                    <!-- 帳號密碼區域 -->
+                    <div id="accountSection">
+                        <div class="mb-2">
+                            <label class="form-label">Email 帳號</label>
+                            <input type="email" class="form-control" name="loginEmail" id="loginEmail"
+                                placeholder="example@domain.com"
+                                pattern="[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$">
+                            <div class="form-text text-muted">格式說明：必須包含 @ 符號與完整的網域（如：user@gmail.com）</div>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">密碼</label>
+                            <input type="password" class="form-control" name="loginPassword" id="loginPassword">
+                        </div>
+                    </div>
+                </div>
+
+                <button type="submit" id="submitBtn" class="btn btn-primary w-100 py-2">✅ 同意並進入倒數計時</button>
+            </form>
+        </div>
+
+        <!-- 頁面 2: 倒數與執行監控 -->
+        <div id="countdownPage" class="card p-4 d-none">
+            <div class="cyber-header">
+                <h3 class="cyber-title text-center w-100 pulse-text">⏳ 搶票倒數監控中</h3>
+            </div>
+            <div class="text-center mb-3">
+                <div id="timer" class="timer-display">00:00:00</div>
+                <div class="text-muted" id="targetInfo"></div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label font-weight-bold" id="logLabel">📋 即時執行日誌 (Logs):</label>
+                <div id="logBox"></div>
+            </div>
+
+            <button id="cancelBtn" class="btn btn-danger w-100 py-2" onclick="cancelTask()">❌ 取消搶票任務</button>
+        </div>
+
+    </div>
+
+    <script>
+        let timerInterval = null;
+        let logPollingInterval = null;
+        let fileId = null;
+        let globalConfig = null;
+        let taskId = null;
+
+        window.onload = function () {
+            const now = new Date();
+            now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+            const localIsoString = now.toISOString().slice(0, 16);
+            document.getElementById('datetimePicker').value = localIsoString;
+        };
+
+        function toggleAuthMode(mode) {
+            if (mode === 'cookie') {
+                document.getElementById('cookieSection').classList.remove('d-none');
+                document.getElementById('accountSection').classList.add('d-none');
+            } else {
+                document.getElementById('cookieSection').classList.add('d-none');
+                document.getElementById('accountSection').classList.remove('d-none');
+            }
+        }
+
+        function handleDistrictChange(districtId) {
+            const container = document.getElementById('churchContainer');
+            if (districtId === "5") {
+                container.innerHTML = `
+          <select name="churchId" required class="form-select">
+            <option value="">選擇召會/會所</option>
+            <option value="11">台北市召會十一會所</option>
+            <option value="14" selected>台北市召會十四會所</option>
+            <option value="22">台北市召會二十二會所</option>
+            <option value="23">台北市召會二十三會所</option>
+            <option value="26">台北市召會二十六會所</option>
+            <option value="44">台北市召會四十四會所</option>
+            <option value="49">台北市召會四十九會所</option>
+            <option value="63">台北市召會六十三會所</option>
+            <option value="66">台北市召會六十六會所</option>
+            <option value="88">台北市召會八十八會所</option>
+          </select>
+        `;
+            } else if (districtId === "6") {
+                container.innerHTML = `
+          <select name="churchId" required class="form-select">
+            <option value="">選擇召會/會所</option>
+            <option value="12">台北市召會十二會所</option>
+            <option value="36">台北市召會三十六會所</option>
+            <option value="37">台北市召會三十七會所</option>
+            <option value="60">台北市召會六十會所</option>
+            <option value="61">台北市召會六十一會所</option>
+            <option value="79">台北市召會七十九會所</option>
+            <option value="81">台北市召會八十一會所</option>
+            <option value="83">台北市召會八十三會所</option>
+            <option value="353">台北市召會一一二會所</option>
+          </select>
+        `;
+            } else {
+                container.innerHTML = `<input type="text" class="form-control" name="churchId" placeholder="請輸入 Church ID" required>`;
+            }
+        }
+
+        document.getElementById('configForm').addEventListener('submit', async function (e) {
+            e.preventDefault();
+
+
+            const offsetSeconds = document.getElementById('offsetSeconds');
+            const logLabel = document.getElementById('logLabel');
+            logLabel.innerText = `📋 即時執行日誌 (Logs) 提前觸發${offsetSeconds.value}秒:`;
+
+            const authMode = document.querySelector('input[name="authMode"]:checked').value;
+            if (authMode === 'account') {
+                const emailInput = document.getElementById('loginEmail').value.trim();
+                const passwordInput = document.getElementById('loginPassword').value.trim();
+                const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+
+                if (!emailInput || !emailRegex.test(emailInput)) {
+                    alert("⚠️ 請輸入有效的 Email 格式（例：example@mail.com）！");
+                    document.getElementById('loginEmail').focus();
+                    return;
+                }
+                if (!passwordInput) {
+                    alert("⚠️ 請輸入密碼！");
+                    document.getElementById('loginPassword').focus();
+                    return;
+                }
+            } else {
+                const sessionInput = document.getElementById('cookieSession').value.trim();
+                if (!sessionInput) {
+                    alert("⚠️ 請輸入 Cookie: _session！");
+                    document.getElementById('cookieSession').focus();
+                    return;
+                }
+            }
+
+            const pickerVal = document.getElementById('datetimePicker').value;
+            if (pickerVal) {
+                const dateObj = new Date(pickerVal);
+                const yyyy = dateObj.getFullYear();
+                const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+                const dd = String(dateObj.getDate()).padStart(2, '0');
+                const hh = String(dateObj.getHours()).padStart(2, '0');
+                const min = String(dateObj.getMinutes()).padStart(2, '0');
+                const ss = String(dateObj.getSeconds()).padStart(2, '0');
+                document.getElementById('targetTimeStr').value = `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}`;
+            }
+
+            const submitBtn = document.getElementById('submitBtn');
+            submitBtn.disabled = true;
+            submitBtn.innerText = "⏳ 正在驗證登入狀態與上傳檔案...";
+
+            try {
+                // 使用 Fetch API 上傳 Multipart Form Data 至 Express API
+                const formData = new FormData(this);
+                const response = await fetch('/api/process-submission', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (result.logs && Array.isArray(result.logs)) {
+                    result.logs.forEach(msg => appendLog(msg));
+                }
+
+                if (result.success) {
+                    fileId = result.fileId;
+                    globalConfig = result.config;
+                    taskId = result.taskId;
+
+                    document.getElementById('setupPage').classList.add('d-none');
+                    document.getElementById('countdownPage').classList.remove('d-none');
+                    document.getElementById('targetInfo').innerText = `目標時間：${globalConfig.targetTimeStr}`;
+
+                    appendLog(`[${getNowTime()}] [FRONTEND] 🔑 登入身份驗證成功！`);
+
+                    startLogPolling();
+                    startCountdown(globalConfig.targetTimeStr, globalConfig.offsetSeconds);
+                } else {
+                    alert(result.error || "提交失敗，請檢查設定");
+                    submitBtn.disabled = false;
+                    submitBtn.innerText = "✅ 同意並進入倒數計時";
+                }
+            } catch (err) {
+                alert("伺服器連線失敗：" + err.message);
+                submitBtn.disabled = false;
+                submitBtn.innerText = "✅ 同意並進入倒數計時";
+            }
+        });
+
+        function startCountdown(targetTimeStr, offsetSec) {
+            const targetTimeMs = new Date(targetTimeStr.replace(" ", "T") + "+08:00").getTime();
+
+            timerInterval = setInterval(() => {
+                const nowMs = new Date().getTime();
+                const diffMs = targetTimeMs - nowMs - (offsetSec * 1000);
+
+                if (diffMs <= 0) {
+                    clearInterval(timerInterval);
+                    document.getElementById('timer').innerText = "00:00:00.000 (觸發連擊!)";
+                    appendLog(`[${getNowTime()}] [FRONTEND] 💥 時間歸零！啟動後端極速連發報名...`);
+
+                    triggerBackendSniper();
+                } else {
+                    const totalSec = Math.floor(diffMs / 1000);
+                    const hrs = String(Math.floor(totalSec / 3600)).padStart(2, '0');
+                    const mins = String(Math.floor((totalSec % 3600) / 60)).padStart(2, '0');
+                    const secs = String(totalSec % 60).padStart(2, '0');
+                    const ms = String(Math.floor(diffMs % 1000)).padStart(3, '0');
+                    document.getElementById('timer').innerText = `${hrs}:${mins}:${secs}.${ms}`;
+                }
+            }, 10);
+        }
+
+        // 輪詢向 Node.js Express 讀取 Log
+        function startLogPolling() {
+            if (logPollingInterval) return;
+            logPollingInterval = setInterval(async () => {
+                if (!taskId) return;
+                try {
+                    const res = await fetch(`/api/logs?taskId=${encodeURIComponent(taskId)}`);
+                    const logs = await res.json();
+                    if (logs && logs.length > 0) {
+                        logs.forEach(msg => appendLog(msg));
+                    }
+                } catch (err) {
+                    console.error("輪詢 Log 錯誤:", err);
+                }
+            }, 500);
+        }
+
+        function stopLogPolling() {
+            if (logPollingInterval) {
+                clearInterval(logPollingInterval);
+                logPollingInterval = null;
+            }
+        }
+
+        // 觸發 Express 後端執行搶單
+        async function triggerBackendSniper() {
+            document.getElementById('cancelBtn').disabled = true;
+
+            try {
+                const response = await fetch('/api/execute-sniper', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ fileId, config: globalConfig, taskId })
+                });
+
+                const result = await response.json();
+
+                stopLogPolling();
+                if (result.logs && Array.isArray(result.logs)) {
+                    result.logs.forEach(msg => appendLog(msg));
+                }
+
+                if (result.success) {
+                    alert("🎉🎉🎉 恭喜！報名成功！");
+                } else {
+                    alert("❌ 搶單失敗，請查看 Log 記錄！");
+                }
+            } catch (err) {
+                stopLogPolling();
+                alert("❌ 執行連線失敗：" + err.message);
+            }
+        }
+
+        function cancelTask() {
+            if (confirm("確定要取消這次搶票任務嗎？")) {
+                clearInterval(timerInterval);
+                stopLogPolling();
+                appendLog(`[${getNowTime()}] 🛑 使用者手動取消了任務。`);
+                setTimeout(() => {
+                    location.reload();
+                }, 1000);
+            }
+        }
+
+        function appendLog(msg) {
+            const logBox = document.getElementById('logBox');
+
+            if (logBox.innerText.includes(msg)) return;
+
+
+            logBox.innerHTML += `<div> ${msg}</div>`;
+            logBox.scrollTop = logBox.scrollHeight;
+        }
+
+
+        function getNowTime() {
+            const now = new Date();
+            return now.toLocaleTimeString('zh-TW', { hour12: false }) + '.' + String(now.getMilliseconds()).padStart(3, '0');
+        }
+
+    </script>
+</body>
+
+</html>
