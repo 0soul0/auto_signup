@@ -181,7 +181,7 @@ app.post('/api/execute-sniper', async (req: Request, res: Response) => {
             }
 
             const INFO_URL = `https://register.tpech.org/conferences/${conferenceSlug}`;
-            const PREVIEW_URL = `https://register.tpech.org/conferences/${conferenceSlug}/register/preview`;
+            // const PREVIEW_URL = `https://register.tpech.org/conferences/${conferenceSlug}/register/preview`;
             const REGISTER_URL = `https://register.tpech.org/conferences/${conferenceSlug}/register`;
             const CONFIRM_URL = `https://register.tpech.org/conferences/${conferenceSlug}/register/confirm`;
 
@@ -294,24 +294,24 @@ app.post('/api/execute-sniper', async (req: Request, res: Response) => {
 
 async function fetchLatestConferenceSlug(cookieHeader: string): Promise<string | null> {
     try {
-        const response = await got.get(TARGET_URL, {
+        const response = await fetch(TARGET_URL, {
+            method: "GET",
             headers: {
                 "Cookie": cookieHeader || "",
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            },
-            throwHttpErrors: false,
-            agent: keepaliveAgent
+            }
         });
 
-        const html = response.body;
+        const html = await response.text();
 
-        const regex = /href=["']https:\/\/register\.tpech\.org\/conferences\/([^"']*sister-blending-conference[^"']*)["']/i;
+        // 匹配 href 含 /conferences/，且內部包含「前往報名」字樣的 <a> 標籤
+        const regex = /<a\s+[^>]*href=["'](?:https?:\/\/[^\/]+)?\/conferences\/([^"'?#]+)["'][^>]*>[\s\S]*?前往報名[\s\S]*?<\/a>/i;
         const match = html.match(regex);
-        if (match && match[1]) return match[1];
 
-        const altRegex = /href=["']\/conferences\/([^"']*sister-blending-conference[^"']*)["']/i;
-        const altMatch = html.match(altRegex);
-        if (altMatch && altMatch[1]) return altMatch[1];
+        if (match && match[1]) {
+            // match[1] 即為解析出的 slug: "2026-sister-blending-conference"
+            return match[1].trim();
+        }
 
     } catch (e) {
         console.error("fetchLatestConferenceSlug Error:", e);
