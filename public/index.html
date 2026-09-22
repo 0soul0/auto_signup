@@ -302,8 +302,8 @@
                 <label class="form-label font-weight-bold">身份驗證方式</label>
                 <div class="d-flex gap-3 mb-3">
                     <div class="form-check">
-                        <input class="form-check-input" type="radio" name="authMode" id="authAccount"
-                            value="account" checked onchange="toggleAuthMode('account')">
+                        <input class="form-check-input" type="radio" name="authMode" id="authAccount" value="account"
+                            checked onchange="toggleAuthMode('account')">
                         <label class="form-check-label" for="authAccount">使用帳號密碼登入</label>
                     </div>
 
@@ -344,7 +344,8 @@
                 </div>
             </div>
 
-            <button type="button" id="loginBtn" class="btn btn-primary w-100 py-2" onclick="performLoginAuth()">🔑 執行登入與驗證</button>
+            <button type="button" id="loginBtn" class="btn btn-primary w-100 py-2" onclick="performLoginAuth()">🔑
+                執行登入與驗證</button>
             <div id="loginStatusAlert" class="alert d-none mt-3 mb-0" role="alert"></div>
         </div>
 
@@ -368,7 +369,7 @@
                     <div class="col-6 mb-3">
                         <label class="form-label">重試次數</label>
                         <div id="retryContainer">
-                            <input type="text" class="form-control" name="retryCount" placeholder="請輸入重試次數" value="15"
+                            <input type="text" class="form-control" name="retryCount" placeholder="請輸入重試次數" value="50"
                                 required>
                         </div>
                     </div>
