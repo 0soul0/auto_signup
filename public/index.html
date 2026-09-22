@@ -289,15 +289,81 @@
         <!-- https://register.tpech.org/conferences/2026-sister-blending-conference -->
         <!-- https://register.tpech.org/conferences/2026-sister-blending-conference/register -->
         <!-- https://register.tpech.org/conferences/2026-sister-blending-conference/register/preview -->
-        <!-- 頁面 1: 參數輸入與上傳表單 -->
-        <div id="setupPage" class="card p-4">
+        <!-- 頁面 1: 身份登入驗證 -->
+        <div id="loginPage" class="card p-4">
             <div class="cyber-header">
                 <a href="https://register.tpech.org/" target="_blank" class="cyber-title">⚡ 召會自動報名系統</a>
                 <span class="cyber-badge">v1.0.6</span>
             </div>
+
+            <h5 class="cyber-title mb-3" style="font-size: 1.1rem;">🔑 步驟 1：身份登入驗證</h5>
+
+            <div class="mb-3 auth-box">
+                <label class="form-label font-weight-bold">身份驗證方式</label>
+                <div class="d-flex gap-3 mb-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="authMode" id="authAccount"
+                            value="account" checked onchange="toggleAuthMode('account')">
+                        <label class="form-check-label" for="authAccount">使用帳號密碼登入</label>
+                    </div>
+
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="authMode" id="authCookie" value="cookie"
+                            onchange="toggleAuthMode('cookie')">
+                        <label class="form-check-label" for="authCookie">使用 Cookie 認證</label>
+                    </div>
+                </div>
+
+                <!-- Cookie 區域 -->
+                <div id="cookieSection" class="d-none">
+                    <div class="mb-2">
+                        <label class="form-label">Cookie: _session</label>
+                        <textarea class="form-control" name="cookieSession" id="cookieSession" rows="2"
+                            placeholder="eyJpdiI6..."></textarea>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Cookie: cf_clearance (選擇性)</label>
+                        <textarea class="form-control" name="cookieCf" id="cookieCf" rows="2"
+                            placeholder="hOScTDXF..."></textarea>
+                    </div>
+                </div>
+
+                <!-- 帳號密碼區域 -->
+                <div id="accountSection">
+                    <div class="mb-2">
+                        <label class="form-label">Email 帳號</label>
+                        <input type="email" class="form-control" name="loginEmail" id="loginEmail"
+                            placeholder="example@domain.com"
+                            pattern="[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$">
+                        <div class="form-text text-muted">格式說明：必須包含 @ 符號與完整的網域（如：user@gmail.com）</div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">密碼</label>
+                        <input type="password" class="form-control" name="loginPassword" id="loginPassword">
+                    </div>
+                </div>
+            </div>
+
+            <button type="button" id="loginBtn" class="btn btn-primary w-100 py-2" onclick="performLoginAuth()">🔑 執行登入與驗證</button>
+            <div id="loginStatusAlert" class="alert d-none mt-3 mb-0" role="alert"></div>
+        </div>
+
+        <!-- 頁面 2: 搶票設定與 Excel 上傳 (登入成功後切換) -->
+        <div id="setupPage" class="card p-4 d-none">
+            <div class="cyber-header">
+                <a href="https://register.tpech.org/" target="_blank" class="cyber-title">⚡ 召會自動報名系統</a>
+                <span class="cyber-badge">v1.0.6</span>
+            </div>
+
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="cyber-title mb-0" style="font-size: 1.1rem;">📁 步驟 2：搶票設定與 Excel 上傳</h5>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-success">✅ 已完成登入驗證</span>
+                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="logoutSession()">🚪 登出</button>
+                </div>
+            </div>
+
             <form id="configForm">
-
-
                 <div class="row">
                     <div class="col-6 mb-3">
                         <label class="form-label">重試次數</label>
@@ -321,7 +387,6 @@
                     <input type="number" step="0.01" class="form-control" name="offsetSeconds" id="offsetSeconds"
                         value="0.08" required>
                 </div>
-
 
                 <!-- 1. 開搶時間 -->
                 <div class="mb-3">
@@ -381,58 +446,11 @@
                     <input type="file" class="form-control" name="excelFile" accept=".xlsx" required>
                 </div>
 
-                <!-- 身份驗證切換 -->
-                <div class="mb-3 auth-box">
-                    <label class="form-label font-weight-bold">🔑 身份驗證方式</label>
-                    <div class="d-flex gap-3 mb-3">
-                        <div class="form-check">
-                            <input class="form-check-input" type="radio" name="authMode" id="authAccount"
-                                value="account" checked onchange="toggleAuthMode('account')">
-                            <label class="form-check-label" for="authAccount">使用帳號密碼登入</label>
-                        </div>
-
-                        <div class="form-check">
-                            <input class="form-check-input" type="radio" name="authMode" id="authCookie" value="cookie"
-                                onchange="toggleAuthMode('cookie')">
-                            <label class="form-check-label" for="authCookie">使用 Cookie 認證</label>
-                        </div>
-                    </div>
-
-                    <!-- Cookie 區域 -->
-                    <div id="cookieSection" class="d-none">
-                        <div class="mb-2">
-                            <label class="form-label">Cookie: _session</label>
-                            <textarea class="form-control" name="cookieSession" id="cookieSession" rows="2"
-                                placeholder="eyJpdiI6..."></textarea>
-                        </div>
-                        <div class="mb-2">
-                            <label class="form-label">Cookie: cf_clearance (選擇性)</label>
-                            <textarea class="form-control" name="cookieCf" rows="2"
-                                placeholder="hOScTDXF..."></textarea>
-                        </div>
-                    </div>
-
-                    <!-- 帳號密碼區域 -->
-                    <div id="accountSection">
-                        <div class="mb-2">
-                            <label class="form-label">Email 帳號</label>
-                            <input type="email" class="form-control" name="loginEmail" id="loginEmail"
-                                placeholder="example@domain.com"
-                                pattern="[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$">
-                            <div class="form-text text-muted">格式說明：必須包含 @ 符號與完整的網域（如：user@gmail.com）</div>
-                        </div>
-                        <div class="mb-2">
-                            <label class="form-label">密碼</label>
-                            <input type="password" class="form-control" name="loginPassword" id="loginPassword">
-                        </div>
-                    </div>
-                </div>
-
                 <button type="submit" id="submitBtn" class="btn btn-primary w-100 py-2">✅ 同意並進入倒數計時</button>
             </form>
         </div>
 
-        <!-- 頁面 2: 倒數與執行監控 -->
+        <!-- 頁面 3: 倒數與執行監控 -->
         <div id="countdownPage" class="card p-4 d-none">
             <div class="cyber-header">
                 <h3 class="cyber-title text-center w-100 pulse-text">⏳ 搶票倒數監控中</h3>
@@ -459,12 +477,21 @@
         let fileId = null;
         let globalConfig = null;
         let taskId = null;
+        let validatedCookieHeader = "";
 
         window.onload = function () {
             const now = new Date();
             now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
             const localIsoString = now.toISOString().slice(0, 16);
             document.getElementById('datetimePicker').value = localIsoString;
+
+            // 檢查是否有暫存的登入 Cookie 憑證
+            const savedCookie = localStorage.getItem('auto_signup_cookie');
+            if (savedCookie) {
+                validatedCookieHeader = savedCookie;
+                document.getElementById('loginPage').classList.add('d-none');
+                document.getElementById('setupPage').classList.remove('d-none');
+            }
         };
 
         function toggleAuthMode(mode) {
@@ -474,6 +501,84 @@
             } else {
                 document.getElementById('cookieSection').classList.add('d-none');
                 document.getElementById('accountSection').classList.remove('d-none');
+            }
+        }
+
+        function logoutSession() {
+            if (confirm("確定要登出系統嗎？")) {
+                localStorage.removeItem('auto_signup_cookie');
+                validatedCookieHeader = "";
+                document.getElementById('setupPage').classList.add('d-none');
+                document.getElementById('loginPage').classList.remove('d-none');
+
+                const loginBtn = document.getElementById('loginBtn');
+                loginBtn.disabled = false;
+                loginBtn.innerText = "🔑 執行登入與驗證";
+                document.getElementById('loginStatusAlert').classList.add('d-none');
+            }
+        }
+
+        async function performLoginAuth() {
+            const authMode = document.querySelector('input[name="authMode"]:checked').value;
+            const loginEmail = document.getElementById('loginEmail').value.trim();
+            const loginPassword = document.getElementById('loginPassword').value.trim();
+            const cookieSession = document.getElementById('cookieSession').value.trim();
+            const cookieCf = document.getElementById('cookieCf').value.trim();
+            const statusAlert = document.getElementById('loginStatusAlert');
+            const loginBtn = document.getElementById('loginBtn');
+
+            if (authMode === 'account') {
+                const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+                if (!loginEmail || !emailRegex.test(loginEmail)) {
+                    alert("⚠️ 請輸入有效的 Email 格式（例：example@mail.com）！");
+                    document.getElementById('loginEmail').focus();
+                    return;
+                }
+                if (!loginPassword) {
+                    alert("⚠️ 請輸入密碼！");
+                    document.getElementById('loginPassword').focus();
+                    return;
+                }
+            } else {
+                if (!cookieSession) {
+                    alert("⚠️ 請輸入 Cookie: _session！");
+                    document.getElementById('cookieSession').focus();
+                    return;
+                }
+            }
+
+            loginBtn.disabled = true;
+            loginBtn.innerText = "⏳ 正在驗證登入身份...";
+            statusAlert.className = "alert alert-info mt-3";
+            statusAlert.innerText = "🔍 正在發送請求至伺服器驗證身份，請稍候...";
+
+            try {
+                const res = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ authMode, loginEmail, loginPassword, cookieSession, cookieCf })
+                });
+
+                const result = await res.json();
+
+                if (result.success) {
+                    validatedCookieHeader = result.cookieHeader;
+                    localStorage.setItem('auto_signup_cookie', validatedCookieHeader);
+
+                    // 登入成功：隱藏登入頁面 (loginPage)，顯示搶票設定頁面 (setupPage)
+                    document.getElementById('loginPage').classList.add('d-none');
+                    document.getElementById('setupPage').classList.remove('d-none');
+                } else {
+                    statusAlert.className = "alert alert-danger mt-3";
+                    statusAlert.innerText = result.error || "❌ 登入驗證失敗！";
+                    loginBtn.disabled = false;
+                    loginBtn.innerText = "🔑 執行登入與驗證";
+                }
+            } catch (err) {
+                statusAlert.className = "alert alert-danger mt-3";
+                statusAlert.innerText = "❌ 伺服器連線失敗：" + err.message;
+                loginBtn.disabled = false;
+                loginBtn.innerText = "🔑 執行登入與驗證";
             }
         }
 
@@ -518,35 +623,14 @@
         document.getElementById('configForm').addEventListener('submit', async function (e) {
             e.preventDefault();
 
+            if (!validatedCookieHeader) {
+                alert("⚠️ 請先完成步驟 1 登入驗證！");
+                return;
+            }
 
             const offsetSeconds = document.getElementById('offsetSeconds');
             const logLabel = document.getElementById('logLabel');
             logLabel.innerText = `📋 即時執行日誌 (Logs) 提前觸發${offsetSeconds.value}秒:`;
-
-            const authMode = document.querySelector('input[name="authMode"]:checked').value;
-            if (authMode === 'account') {
-                const emailInput = document.getElementById('loginEmail').value.trim();
-                const passwordInput = document.getElementById('loginPassword').value.trim();
-                const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-
-                if (!emailInput || !emailRegex.test(emailInput)) {
-                    alert("⚠️ 請輸入有效的 Email 格式（例：example@mail.com）！");
-                    document.getElementById('loginEmail').focus();
-                    return;
-                }
-                if (!passwordInput) {
-                    alert("⚠️ 請輸入密碼！");
-                    document.getElementById('loginPassword').focus();
-                    return;
-                }
-            } else {
-                const sessionInput = document.getElementById('cookieSession').value.trim();
-                if (!sessionInput) {
-                    alert("⚠️ 請輸入 Cookie: _session！");
-                    document.getElementById('cookieSession').focus();
-                    return;
-                }
-            }
 
             const pickerVal = document.getElementById('datetimePicker').value;
             if (pickerVal) {
@@ -562,11 +646,13 @@
 
             const submitBtn = document.getElementById('submitBtn');
             submitBtn.disabled = true;
-            submitBtn.innerText = "⏳ 正在驗證登入狀態與上傳檔案...";
+            submitBtn.innerText = "⏳ 正在處理與上傳檔案...";
 
             try {
                 // 使用 Fetch API 上傳 Multipart Form Data 至 Express API
                 const formData = new FormData(this);
+                formData.append('validatedCookieHeader', validatedCookieHeader);
+
                 const response = await fetch('/api/process-submission', {
                     method: 'POST',
                     body: formData
@@ -587,7 +673,7 @@
                     document.getElementById('countdownPage').classList.remove('d-none');
                     document.getElementById('targetInfo').innerText = `目標時間：${globalConfig.targetTimeStr}`;
 
-                    appendLog(`[${getNowTime()}] [FRONTEND] 🔑 登入身份驗證成功！`);
+                    appendLog(`[${getNowTime()}] [FRONTEND] 🔑 登入身份驗證已確認，任務已就緒！`);
 
                     startLogPolling();
                     startCountdown(globalConfig.targetTimeStr, globalConfig.offsetSeconds);

@@ -53,40 +53,17 @@ const handleGetLogs = (req: Request, res: Response) => {
 app.get('/api/logs', handleGetLogs);
 app.get('/api/logs/:taskId', handleGetLogs);
 
-// 階段 1：接收表單並預先驗證身份 (替代 processSubmission)
-app.post('/api/process-submission', upload.single('excelFile'), async (req: Request, res: Response) => {
-
-    const taskId = "TASK_" + Date.now();
+// 階段 1：獨立身份驗證與登入 (帳密/Cookie)
+app.post('/api/login', async (req: Request, res: Response) => {
+    const taskId = "AUTH_" + Date.now();
+    const { authMode, loginEmail, loginPassword, cookieSession, cookieCf } = req.body;
 
     try {
-        const file = req.file;
-        if (!file) {
-            return res.json({ success: false, error: "未上傳 Excel 檔案！", logs: executionLogs });
-        }
-
-        const fileId = "FILE_" + Date.now();
-        fileCache.set(fileId, file.buffer);
-
-        const config = {
-            retryInterval: req.body.retryInterval,
-            retryCount: req.body.retryCount,
-            targetTimeStr: req.body.targetTimeStr,
-            districtId: req.body.districtId,
-            churchId: req.body.churchId,
-            authMode: req.body.authMode,
-            cookieSession: req.body.cookieSession,
-            cookieCf: req.body.cookieCf,
-            loginEmail: req.body.loginEmail,
-            loginPassword: req.body.loginPassword,
-            offsetSeconds: parseFloat(req.body.offsetSeconds) || 0.1,
-            validatedCookieHeader: ""
-        };
-
         let cookieHeader = "";
 
-        if (config.authMode === "account") {
+        if (authMode === "account") {
             pushLog(taskId, "INFO", "🔑 開始發送帳號密碼驗證...");
-            const loginResult = await performLogin(taskId, LOGIN_URL, config.loginEmail, config.loginPassword);
+            const loginResult = await performLogin(taskId, LOGIN_URL, loginEmail, loginPassword);
 
             if (!loginResult.success) {
                 return res.json({
@@ -98,8 +75,8 @@ app.post('/api/process-submission', upload.single('excelFile'), async (req: Requ
             cookieHeader = loginResult.cookieHeader || "";
             pushLog(taskId, "SUCCESS", "✅ 帳密驗證成功，取得 Cookie Session。");
         } else {
-            cookieHeader = `_session=${config.cookieSession}`;
-            if (config.cookieCf) cookieHeader += `; cf_clearance=${config.cookieCf}`;
+            cookieHeader = `_session=${cookieSession}`;
+            if (cookieCf) cookieHeader += `; cf_clearance=${cookieCf}`;
 
             pushLog(taskId, "INFO", "🔍 正在測試 Cookie 是否有效...");
             const testRes = await got.get(TARGET_URL, {
@@ -120,8 +97,47 @@ app.post('/api/process-submission', upload.single('excelFile'), async (req: Requ
             pushLog(taskId, "SUCCESS", "✅ Cookie 測試有效！");
         }
 
-        config.validatedCookieHeader = cookieHeader;
-        pushLog(taskId, "INFO", "📁 Excel 報名表單已載入記憶體暫存...");
+        return res.json({
+            success: true,
+            cookieHeader: cookieHeader,
+            taskId: taskId,
+            logs: executionLogs
+        });
+    } catch (e: any) {
+        pushLog(taskId, "ERROR", e.toString());
+        return res.json({ success: false, error: "登入驗證過程發生例外錯誤: " + e.toString(), logs: executionLogs });
+    }
+});
+
+// 階段 2：接收表單並載入記憶體暫存
+app.post('/api/process-submission', upload.single('excelFile'), async (req: Request, res: Response) => {
+    const taskId = "TASK_" + Date.now();
+
+    try {
+        const file = req.file;
+        if (!file) {
+            return res.json({ success: false, error: "未上傳 Excel 檔案！", logs: executionLogs });
+        }
+
+        const cookieHeader = req.body.validatedCookieHeader || req.body.cookieHeader;
+        if (!cookieHeader) {
+            return res.json({ success: false, error: "未提供登入憑證！請先完成登入驗證。", logs: executionLogs });
+        }
+
+        const fileId = "FILE_" + Date.now();
+        fileCache.set(fileId, file.buffer);
+
+        const config = {
+            retryInterval: req.body.retryInterval,
+            retryCount: req.body.retryCount,
+            targetTimeStr: req.body.targetTimeStr,
+            districtId: req.body.districtId,
+            churchId: req.body.churchId,
+            offsetSeconds: parseFloat(req.body.offsetSeconds) || 0.1,
+            validatedCookieHeader: cookieHeader
+        };
+
+        pushLog(taskId, "INFO", "📁 Excel 報名表單與任務設定已載入記憶體暫存...");
 
         return res.json({
             success: true,
@@ -133,7 +149,7 @@ app.post('/api/process-submission', upload.single('excelFile'), async (req: Requ
 
     } catch (e: any) {
         pushLog(taskId, "ERROR", e.toString());
-        return res.json({ success: false, error: "驗證過程發生例外錯誤: " + e.toString(), logs: executionLogs });
+        return res.json({ success: false, error: "處理提交任務時發生例外錯誤: " + e.toString(), logs: executionLogs });
     }
 });
 
