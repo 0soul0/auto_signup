@@ -1,0 +1,365 @@
+import express, {} from 'express';
+import multer from 'multer';
+import got from 'got';
+import HttpAgent, { HttpsAgent } from 'agentkeepalive';
+import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { readFile } from 'fs/promises';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const app = express();
+const upload = multer({ storage: multer.memoryStorage() });
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static(path.join(__dirname, 'public')));
+const TARGET_URL = "https://register.tpech.org/";
+const LOGIN_URL = "https://register.tpech.org/login";
+// ⚡ 效能優化：啟用 Keep-Alive 重用 TCP/TLS 連線，節省 30ms 握手耗時
+const keepaliveAgent = {
+    http: new HttpAgent({ keepAlive: true, maxSockets: 100 }),
+    https: new HttpsAgent({ keepAlive: true, maxSockets: 100 })
+};
+// 記憶體快取 (替代 GAS 的 CacheService)
+const logCache = new Map();
+const fileCache = new Map();
+function writeLogToCache(taskId, msg) {
+    if (!taskId)
+        return;
+    const logs = logCache.get(taskId) || [];
+    logs.push(msg);
+    logCache.set(taskId, logs);
+}
+// 供前端輪詢讀取 Log API (支持 query ?taskId=... 與 path /:taskId)
+const handleGetLogs = (req, res) => {
+    const taskId = (req.params.taskId || req.query.taskId);
+    if (!taskId || !logCache.has(taskId)) {
+        return res.json([]);
+    }
+    const logs = logCache.get(taskId) || [];
+    logCache.delete(taskId); // 讀取後即移除，避免重複印出
+    res.json(logs);
+};
+app.get('/api/logs', handleGetLogs);
+app.get('/api/logs/:taskId', handleGetLogs);
+// 階段 1：獨立身份驗證與登入 (帳密/Cookie)
+app.post('/api/login', async (req, res) => {
+    const taskId = "AUTH_" + Date.now();
+    const { authMode, loginEmail, loginPassword, cookieSession, cookieCf } = req.body;
+    try {
+        let cookieHeader = "";
+        if (authMode === "account") {
+            pushLog(taskId, "INFO", "🔑 開始發送帳號密碼驗證...");
+            const loginResult = await performLogin(taskId, LOGIN_URL, loginEmail, loginPassword);
+            if (!loginResult.success) {
+                return res.json({
+                    success: false,
+                    error: loginResult.error || "❌ 帳號或密碼錯誤，登入失敗！請檢查後重試。",
+                    logs: executionLogs
+                });
+            }
+            cookieHeader = loginResult.cookieHeader || "";
+            pushLog(taskId, "SUCCESS", "✅ 帳密驗證成功，取得 Cookie Session。");
+        }
+        else {
+            cookieHeader = `_session=${cookieSession}`;
+            if (cookieCf)
+                cookieHeader += `; cf_clearance=${cookieCf}`;
+            pushLog(taskId, "INFO", "🔍 正在測試 Cookie 是否有效...");
+            const testRes = await got.get(TARGET_URL, {
+                headers: { "Cookie": cookieHeader, "User-Agent": "Mozilla/5.0" },
+                throwHttpErrors: false,
+                followRedirect: false,
+                agent: keepaliveAgent
+            });
+            const statusCode = testRes.statusCode;
+            if (statusCode === 302 || statusCode === 401 || statusCode === 403) {
+                return res.json({
+                    success: false,
+                    error: "❌ Cookie 已失效或過期！請重新抓取 _session / cf_clearance。",
+                    logs: executionLogs
+                });
+            }
+            pushLog(taskId, "SUCCESS", "✅ Cookie 測試有效！");
+        }
+        return res.json({
+            success: true,
+            cookieHeader: cookieHeader,
+            taskId: taskId,
+            logs: executionLogs
+        });
+    }
+    catch (e) {
+        pushLog(taskId, "ERROR", e.toString());
+        return res.json({ success: false, error: "登入驗證過程發生例外錯誤: " + e.toString(), logs: executionLogs });
+    }
+});
+// 階段 2：接收表單並載入記憶體暫存
+app.post('/api/process-submission', upload.single('excelFile'), async (req, res) => {
+    const taskId = "TASK_" + Date.now();
+    try {
+        const file = req.file;
+        if (!file) {
+            return res.json({ success: false, error: "未上傳 Excel 檔案！", logs: executionLogs });
+        }
+        const cookieHeader = req.body.validatedCookieHeader || req.body.cookieHeader;
+        if (!cookieHeader) {
+            return res.json({ success: false, error: "未提供登入憑證！請先完成登入驗證。", logs: executionLogs });
+        }
+        const fileId = "FILE_" + Date.now();
+        fileCache.set(fileId, file.buffer);
+        const config = {
+            retryInterval: req.body.retryInterval,
+            retryCount: req.body.retryCount,
+            targetTimeStr: req.body.targetTimeStr,
+            districtId: req.body.districtId,
+            churchId: req.body.churchId,
+            offsetSeconds: parseFloat(req.body.offsetSeconds) || 0.1,
+            validatedCookieHeader: cookieHeader
+        };
+        pushLog(taskId, "INFO", "📁 Excel 報名表單與任務設定已載入記憶體暫存...");
+        return res.json({
+            success: true,
+            config: config,
+            taskId: taskId,
+            fileId: fileId,
+            logs: executionLogs
+        });
+    }
+    catch (e) {
+        pushLog(taskId, "ERROR", e.toString());
+        return res.json({ success: false, error: "處理提交任務時發生例外錯誤: " + e.toString(), logs: executionLogs });
+    }
+});
+// 階段 2：核心搶票連擊發射 (替代 executeSniper)
+app.post('/api/execute-sniper', async (req, res) => {
+    const taskId = req.body.taskId;
+    const fileId = req.body.fileId;
+    const config = req.body.config || {};
+    const cookieHeader = config.validatedCookieHeader || req.body.cookieHeader;
+    const districtId = config.districtId || req.body.districtId;
+    const churchId = config.churchId || req.body.churchId;
+    const retryInterval = config.retryInterval || req.body.retryInterval;
+    const retryCount = config.retryCount || req.body.retryCount;
+    const excelBuffer = fileCache.get(fileId) || (fileId ? fileCache.get(taskId) : undefined);
+    pushLog(taskId, "START", "🚀 開始執行後端秒殺連擊...");
+    const MAX_RETRIES = retryCount ?? 15;
+    const RETRY_INTERVAL_MS = retryInterval ?? 100;
+    try {
+        if (!excelBuffer) {
+            pushLog(taskId, "ERROR", "❌ 無法讀取 Excel 檔案 Buffer");
+            return res.json({ success: false, logs: executionLogs });
+        }
+        let isSuccess = false;
+        let conferenceSlug = null;
+        for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            pushLog(taskId, "INFO", "    ");
+            pushLog(taskId, "INFO", `🚀 第 ${attempt} 次嘗試搶票...`);
+            if (!conferenceSlug) {
+                pushLog(taskId, "INFO", "🔍 正在向首頁請求最新 Slug...");
+                conferenceSlug = await fetchLatestConferenceSlug(cookieHeader);
+                if (!conferenceSlug) {
+                    pushLog(taskId, "WARN", `⚠️ 第 ${attempt} 次嘗試：首頁尚未開放，${RETRY_INTERVAL_MS}ms 後重試...`);
+                    await new Promise(resolve => setTimeout(resolve, RETRY_INTERVAL_MS));
+                    continue;
+                }
+                pushLog(taskId, "INFO", `✅ 成功鎖定動態 Slug: ${conferenceSlug}`);
+            }
+            const INFO_URL = `https://register.tpech.org/conferences/${conferenceSlug}`;
+            // const PREVIEW_URL = `https://register.tpech.org/conferences/${conferenceSlug}/register/preview`;
+            const REGISTER_URL = `https://register.tpech.org/conferences/${conferenceSlug}/register`;
+            const CONFIRM_URL = `https://register.tpech.org/conferences/${conferenceSlug}/register/confirm`;
+            pushLog(taskId, "INFO", `發送第一階段請求...`);
+            // Step 1 GET: 抓取 CSRF Token
+            const resRegister = await fetch(INFO_URL, {
+                method: "GET",
+                headers: {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Cookie": cookieHeader,
+                    "Cache-Control": "no-cache",
+                    "Referer": TARGET_URL
+                }
+            });
+            // 解析 HTML 回應內容
+            const htmlReg = await resRegister.text();
+            const csrfToken = extractInputValue(htmlReg, "_token");
+            if (!csrfToken) {
+                pushLog(taskId, "WARN", `⚠️ 第 ${attempt} 次嘗試：CSRF Token 取得失敗，${RETRY_INTERVAL_MS}ms 後重試...`);
+                conferenceSlug = null;
+                await new Promise(resolve => setTimeout(resolve, RETRY_INTERVAL_MS));
+                continue;
+            }
+            // Step 1 POST: 上傳檔案(使用 Node 原生 FormData 與 Blob)
+            const excelFile = new File([new Uint8Array(excelBuffer)], "registration.xlsx", { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            const formStep1 = new FormData();
+            formStep1.append("_token", csrfToken);
+            formStep1.append("district_id", String(districtId));
+            formStep1.append("church_id", String(churchId));
+            formStep1.append("registration_form", excelFile, 'form.xlsx');
+            pushLog(taskId, "INFO", `token:${csrfToken}`);
+            pushLog(taskId, "INFO", `REGISTER_URL:${REGISTER_URL}`);
+            const step1Response = await fetch(REGISTER_URL, {
+                method: "POST",
+                headers: {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Cookie": cookieHeader,
+                    "Cache-Control": "no-cache",
+                    "Referer": REGISTER_URL,
+                    "X-Requested-With": "XMLHttpRequest",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+                    // ⚠️ 注意：使用原生 fetch + FormData 時，千萬不要手動加上 Content-Type 標頭！
+                    // 瀏覽器/Node 核心會自動加上含有正確 boundary 的 multipart/form-data
+                },
+                body: formStep1
+            });
+            const htmlConfirm = await step1Response.text();
+            const previewToken = extractInputValue(htmlConfirm, "preview_token");
+            if (!previewToken) {
+                pushLog(taskId, "WARN", `⚠️ 第 ${attempt} 次嘗試：第一階段表單送出無回應或被退回，${RETRY_INTERVAL_MS}ms 後補刀...`);
+                await new Promise(resolve => setTimeout(resolve, RETRY_INTERVAL_MS));
+                continue;
+            }
+            pushLog(taskId, "INFO", `preview_token:${previewToken}`);
+            // Step 2 POST: 最終確認
+            const step2CsrfToken = extractInputValue(htmlConfirm, "_token") || csrfToken;
+            const formStep2 = new FormData();
+            formStep2.append("_token", step2CsrfToken);
+            formStep2.append("preview_token", previewToken);
+            pushLog(taskId, "INFO", `發送最終確認請求...`);
+            const finalResponse = await fetch(CONFIRM_URL, {
+                method: "POST",
+                headers: {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Cookie": cookieHeader,
+                    "Referer": REGISTER_URL,
+                    "Cache-Control": "no-cache",
+                    "X-Requested-With": "XMLHttpRequest",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+                    // ⚠️ 使用原生 fetch 搭配 FormData 時，切勿手動加上 Content-Type 標頭
+                },
+                body: formStep2
+            });
+            if (finalResponse.status === 200 || finalResponse.status === 302) {
+                pushLog(taskId, "SUCCESS", "🎉🎉🎉 恭喜！秒殺成功，已完成最終報名送出！");
+                isSuccess = true;
+                break;
+            }
+            else {
+                pushLog(taskId, "ERROR", `❌ 第二階段失敗，HTTP Status: ${finalResponse.status}`);
+                await new Promise(resolve => setTimeout(resolve, RETRY_INTERVAL_MS));
+            }
+        }
+        return res.json({ success: isSuccess, logs: executionLogs });
+    }
+    catch (e) {
+        pushLog(taskId, "ERROR", `❌ 發生異常: ${e.toString()}`);
+        return res.json({ success: false, logs: executionLogs });
+    }
+});
+async function fetchLatestConferenceSlug(cookieHeader) {
+    try {
+        const response = await fetch(TARGET_URL, {
+            method: "GET",
+            headers: {
+                "Cookie": cookieHeader || "",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+        });
+        const html = await response.text();
+        // 匹配 href 含 /conferences/，且內部包含「前往報名」字樣的 <a> 標籤
+        const regex = /<a\s+[^>]*href=["'](?:https?:\/\/[^\/]+)?\/conferences\/([^"'?#]+)["'][^>]*>[\s\S]*?前往報名[\s\S]*?<\/a>/i;
+        const match = html.match(regex);
+        if (match && match[1]) {
+            // match[1] 即為解析出的 slug: "2026-sister-blending-conference"
+            return match[1].trim();
+        }
+    }
+    catch (e) {
+        console.error("fetchLatestConferenceSlug Error:", e);
+    }
+    return null;
+}
+async function performLogin(taskId, loginUrl, email, password) {
+    try {
+        pushLog(taskId, "INFO", "開始抓取登入頁面 CSRF Token...");
+        const resGet = await got.get(loginUrl, {
+            headers: {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
+            },
+            throwHttpErrors: false,
+            followRedirect: true,
+            agent: keepaliveAgent
+        });
+        const htmlGet = resGet.body;
+        const token = extractInputValue(htmlGet, "_token");
+        pushLog(taskId, "INFO", `成功取得登入 Token: ${token}`);
+        const rawGetCookies = resGet.headers["set-cookie"];
+        const initialCookieStr = rawGetCookies ? rawGetCookies.join("; ") : "";
+        if (!token) {
+            return { success: false, error: "無法取得登入頁面的 CSRF Token，請確認網址是否正確。" };
+        }
+        // 1. 使用原生 globalThis.FormData
+        const form = new FormData();
+        form.append("_token", token);
+        form.append("email", email);
+        form.append("password", password);
+        // 2. got 會自動處理原生 FormData 的 Header
+        const resPost = await got.post(loginUrl, {
+            body: form,
+            headers: {
+                "Cookie": initialCookieStr,
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                "Referer": loginUrl,
+                "Origin": "https://register.tpech.org"
+                // ⚠️ 注意：不要在這裡加 ...form.getHeaders()
+            },
+            throwHttpErrors: false,
+            followRedirect: false,
+            agent: keepaliveAgent
+        });
+        const statusCode = resPost.statusCode;
+        const postCookies = resPost.headers["set-cookie"];
+        const locationHeader = resPost.headers["location"];
+        if ((statusCode === 302 || statusCode === 301) && postCookies) {
+            if (locationHeader && !locationHeader.includes("/login")) {
+                return {
+                    success: true,
+                    cookieHeader: postCookies.join("; ")
+                };
+            }
+        }
+        const responseHtml = resPost.body;
+        if (responseHtml.includes('name="password"') || statusCode === 200) {
+            return { success: false, error: "登入失敗：網站退回登入頁（請確認帳密或是否需過驗證碼）。" };
+        }
+    }
+    catch (e) {
+        return { success: false, error: "登入發送過程異常: " + e.toString() };
+    }
+    return { success: false, error: "登入未成功，帳號密碼錯誤或是請嘗試改用「Cookie 認證模式」。" };
+}
+function extractInputValue(html, name) {
+    const regex = new RegExp(`name=["']${name}["'][^>]*value=["']([^"']+)["']`, "i");
+    const match = html.match(regex);
+    if (match)
+        return match[1] ?? null;
+    const regexAlt = new RegExp(`value=["']([^"']+)["'][^>]*name=["']${name}["']`, "i");
+    const matchAlt = html.match(regexAlt);
+    return matchAlt ? matchAlt[1] ?? null : null;
+}
+const executionLogs = [];
+function pushLog(taskId, type, msg) {
+    const now = new Date();
+    const time = now.toTimeString().split(' ')[0] + '.' + String(now.getMilliseconds()).padStart(3, '0');
+    const formatted = `[${time}] [${type}] ${msg}`;
+    console.log(formatted);
+    executionLogs.push(formatted);
+    writeLogToCache(taskId, formatted);
+}
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`🚀 Server running on http://localhost:${PORT}`);
+});
+//# sourceMappingURL=server.js.map

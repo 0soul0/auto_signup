@@ -293,7 +293,7 @@
         <div id="loginPage" class="card p-4">
             <div class="cyber-header">
                 <a href="https://register.tpech.org/" target="_blank" class="cyber-title">⚡ 召會自動報名系統</a>
-                <span class="cyber-badge">v1.0.6</span>
+                <span id="version1" class="cyber-badge"></span>
             </div>
 
             <h5 class="cyber-title mb-3" style="font-size: 1.1rem;">🔑 步驟 1：身份登入驗證</h5>
@@ -353,13 +353,14 @@
         <div id="setupPage" class="card p-4 d-none">
             <div class="cyber-header">
                 <a href="https://register.tpech.org/" target="_blank" class="cyber-title">⚡ 召會自動報名系統</a>
-                <span class="cyber-badge">v1.0.6</span>
+                <span id="version2" class="cyber-badge"></span>
             </div>
 
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h5 class="cyber-title mb-0" style="font-size: 1.1rem;">📁 步驟 2：搶票設定與 Excel 上傳</h5>
                 <div class="d-flex align-items-center gap-2">
                     <span class="badge bg-success">✅ 已完成登入驗證</span>
+                    <span class="badge bg-info" title="每 50 分鐘將自動連線刷新 Cookie 防失效">🔄 50m 自動重刷已啟用</span>
                     <button type="button" class="btn btn-sm btn-outline-danger" onclick="logoutSession()">🚪 登出</button>
                 </div>
             </div>
@@ -473,6 +474,8 @@
     </div>
 
     <script>
+        const VERSION = "v1.0.7";
+
         let timerInterval = null;
         let logPollingInterval = null;
         let fileId = null;
@@ -480,11 +483,140 @@
         let taskId = null;
         let validatedCookieHeader = "";
 
+        let idleTimer = null;
+        let lastActivityTime = 0;
+        const IDLE_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 30 分鐘無動作自動登出
+
+        // ⚡ 50 分鐘自動重新登入防 Cookie / Session 失效
+        let reloginTimer = null;
+        const AUTO_RELOGIN_INTERVAL_MS = 50 * 60 * 1000; // 50 分鐘
+
+        function startAutoReloginTimer() {
+            if (reloginTimer) clearInterval(reloginTimer);
+            reloginTimer = setInterval(executeAutoRelogin, AUTO_RELOGIN_INTERVAL_MS);
+        }
+
+        function stopAutoReloginTimer() {
+            if (reloginTimer) {
+                clearInterval(reloginTimer);
+                reloginTimer = null;
+            }
+        }
+
+        async function executeAutoRelogin() {
+            const savedAuthStr = localStorage.getItem('auto_signup_auth_info');
+            if (!savedAuthStr) {
+                stopAutoReloginTimer();
+                return;
+            }
+
+            try {
+                const authData = JSON.parse(savedAuthStr);
+                const timeStr = new Date().toLocaleTimeString();
+                console.log(`[${timeStr}] 🔄 [50分鐘觸發] 開始自動重新登入以刷新 Session Cookie...`);
+
+                const res = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(authData)
+                });
+
+                const result = await res.json();
+                if (result.success) {
+
+                    validatedCookieHeader = result.cookieHeader;
+                    localStorage.setItem('auto_signup_cookie', validatedCookieHeader);
+
+                    if (globalConfig) {
+                        globalConfig.validatedCookieHeader = validatedCookieHeader;
+                    }
+
+                    resetIdleTimer();
+                    console.log(`[${new Date().toLocaleTimeString()}] ✅ [50分鐘觸發] 自動重新登入成功！auto_signup_cookie 已刷新。`);
+
+                    const logBox = document.getElementById('logBox');
+                    if (logBox && !document.getElementById('countdownPage').classList.contains('d-none')) {
+                        const logItem = document.createElement('div');
+                        logItem.style.color = '#38bdf8';
+                        logItem.innerText = `[${new Date().toLocaleTimeString()}] 🔄 [50分鐘自動刷新] Session Cookie 重新登入成功並已更新！`;
+                        logBox.appendChild(logItem);
+                        logBox.scrollTop = logBox.scrollHeight;
+                    }
+                } else {
+                    console.warn(`[${new Date().toLocaleTimeString()}] ⚠️ [50分鐘觸發] 自動重新登入失敗:`, result.error);
+                }
+            } catch (err) {
+                console.error(`[${new Date().toLocaleTimeString()}] ❌ [50分鐘觸發] 自動重新登入過程發生異常:`, err);
+            }
+        }
+
+        function resetIdleTimer() {
+            console.log('resetIdleTimer' + IDLE_TIMEOUT_MS);
+            if (idleTimer) clearTimeout(idleTimer);
+            if (localStorage.getItem('auto_signup_cookie')) {
+                // 若正在倒數搶票監控中，保持不自動登出
+                if (!document.getElementById('countdownPage').classList.contains('d-none')) {
+                    return;
+                }
+                idleTimer = setTimeout(() => {
+                    autoLogout();
+                }, IDLE_TIMEOUT_MS);
+            }
+        }
+
+        function handleUserActivity() {
+            const now = Date.now();
+            if (now - lastActivityTime > 5000) { // 避免高頻重置，每 5 秒最多更新一次
+                lastActivityTime = now;
+                resetIdleTimer();
+            }
+        }
+
+        function setupActivityListeners() {
+            ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click'].forEach(evt => {
+                window.addEventListener(evt, handleUserActivity, { passive: true });
+            });
+        }
+
+        function autoLogout() {
+            if (idleTimer) clearTimeout(idleTimer);
+            localStorage.removeItem('auto_signup_cookie');
+            localStorage.removeItem('auto_signup_auth_info');
+            stopAutoReloginTimer();
+            validatedCookieHeader = "";
+
+            if (timerInterval) clearInterval(timerInterval);
+            stopLogPolling();
+
+            document.getElementById('setupPage').classList.add('d-none');
+            document.getElementById('countdownPage').classList.add('d-none');
+            document.getElementById('loginPage').classList.remove('d-none');
+
+            const loginBtn = document.getElementById('loginBtn');
+            loginBtn.disabled = false;
+            loginBtn.innerText = "🔑 執行登入與驗證";
+
+            const statusAlert = document.getElementById('loginStatusAlert');
+            statusAlert.className = "alert alert-warning mt-3";
+            statusAlert.innerText = "⚠️ 由於您已超過 30 分鐘未進行任何操作，系統已自動登出。";
+            statusAlert.classList.remove('d-none');
+
+            alert("⚠️ 由於您已超過 30 分鐘未進行任何操作，系統已自動登出。");
+        }
+
         window.onload = function () {
+
+            const version1 = document.getElementById('version1');
+            const version2 = document.getElementById('version2');
+            version1.innerText = VERSION;
+            version2.innerText = VERSION;
+
             const now = new Date();
             now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
             const localIsoString = now.toISOString().slice(0, 16);
             document.getElementById('datetimePicker').value = localIsoString;
+
+            setupActivityListeners();
 
             // 檢查是否有暫存的登入 Cookie 憑證
             const savedCookie = localStorage.getItem('auto_signup_cookie');
@@ -492,6 +624,11 @@
                 validatedCookieHeader = savedCookie;
                 document.getElementById('loginPage').classList.add('d-none');
                 document.getElementById('setupPage').classList.remove('d-none');
+                resetIdleTimer();
+            }
+
+            if (localStorage.getItem('auto_signup_auth_info')) {
+                startAutoReloginTimer();
             }
         };
 
@@ -507,9 +644,13 @@
 
         function logoutSession() {
             if (confirm("確定要登出系統嗎？")) {
+                if (idleTimer) clearTimeout(idleTimer);
                 localStorage.removeItem('auto_signup_cookie');
+                localStorage.removeItem('auto_signup_auth_info');
+                stopAutoReloginTimer();
                 validatedCookieHeader = "";
                 document.getElementById('setupPage').classList.add('d-none');
+                document.getElementById('countdownPage').classList.add('d-none');
                 document.getElementById('loginPage').classList.remove('d-none');
 
                 const loginBtn = document.getElementById('loginBtn');
@@ -554,10 +695,11 @@
             statusAlert.innerText = "🔍 正在發送請求至伺服器驗證身份，請稍候...";
 
             try {
+                const authPayload = { authMode, loginEmail, loginPassword, cookieSession, cookieCf };
                 const res = await fetch('/api/login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ authMode, loginEmail, loginPassword, cookieSession, cookieCf })
+                    body: JSON.stringify(authPayload)
                 });
 
                 const result = await res.json();
@@ -565,6 +707,9 @@
                 if (result.success) {
                     validatedCookieHeader = result.cookieHeader;
                     localStorage.setItem('auto_signup_cookie', validatedCookieHeader);
+                    localStorage.setItem('auto_signup_auth_info', JSON.stringify(authPayload));
+                    startAutoReloginTimer();
+                    resetIdleTimer();
 
                     // 登入成功：隱藏登入頁面 (loginPage)，顯示搶票設定頁面 (setupPage)
                     document.getElementById('loginPage').classList.add('d-none');
