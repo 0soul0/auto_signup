@@ -474,7 +474,7 @@
     </div>
 
     <script>
-        const VERSION = "v1.0.7";
+        const VERSION = "v1.0.8";
 
         let timerInterval = null;
         let logPollingInterval = null;
@@ -483,13 +483,25 @@
         let taskId = null;
         let validatedCookieHeader = "";
 
+        // 離開頁面與閒置超時設定 (20 分鐘)
         let idleTimer = null;
+        let leaveTimer = null;
         let lastActivityTime = 0;
-        const IDLE_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 30 分鐘無動作自動登出
+        const LEAVE_TIMEOUT_MS = 20 * 60 * 1000; // 離開頁面超過 20 分鐘自動登出
+        const IDLE_TIMEOUT_MS = 20 * 60 * 1000;  // 頁面無操作超過 20 分鐘自動登出
 
         // ⚡ 50 分鐘自動重新登入防 Cookie / Session 失效
         let reloginTimer = null;
         const AUTO_RELOGIN_INTERVAL_MS = 50 * 60 * 1000; // 50 分鐘
+
+        function isLoggedIn() {
+            return !!localStorage.getItem('auto_signup_cookie');
+        }
+
+        function isCountdownActive() {
+            const page = document.getElementById('countdownPage');
+            return page && !page.classList.contains('d-none');
+        }
 
         function startAutoReloginTimer() {
             if (reloginTimer) clearInterval(reloginTimer);
@@ -505,9 +517,21 @@
 
         async function executeAutoRelogin() {
             const savedAuthStr = localStorage.getItem('auto_signup_auth_info');
-            if (!savedAuthStr) {
+            if (!savedAuthStr || !isLoggedIn()) {
                 stopAutoReloginTimer();
                 return;
+            }
+
+            // 若非搶票倒數中，且離開頁面已超過 20 分鐘，中止重刷並登出
+            if (!isCountdownActive()) {
+                const leaveTimeStr = localStorage.getItem('auto_signup_last_leave_time');
+                const activeTimeStr = localStorage.getItem('auto_signup_last_active_time');
+                const lastTime = Math.max(parseInt(leaveTimeStr || '0', 10), parseInt(activeTimeStr || '0', 10));
+                if (lastTime > 0 && (Date.now() - lastTime >= LEAVE_TIMEOUT_MS)) {
+                    console.warn(`[AutoLogout] 偵測到已離開頁面超過 20 分鐘，停止自動重新登入並執行登出。`);
+                    autoLogout("⚠️ 由於您已離開頁面超過 20 分鐘，系統已自動登出。");
+                    return;
+                }
             }
 
             try {
@@ -535,7 +559,7 @@
                     console.log(`[${new Date().toLocaleTimeString()}] ✅ [50分鐘觸發] 自動重新登入成功！auto_signup_cookie 已刷新。`);
 
                     const logBox = document.getElementById('logBox');
-                    if (logBox && !document.getElementById('countdownPage').classList.contains('d-none')) {
+                    if (logBox && isCountdownActive()) {
                         const logItem = document.createElement('div');
                         logItem.style.color = '#38bdf8';
                         logItem.innerText = `[${new Date().toLocaleTimeString()}] 🔄 [50分鐘自動刷新] Session Cookie 重新登入成功並已更新！`;
@@ -551,15 +575,14 @@
         }
 
         function resetIdleTimer() {
-            console.log('resetIdleTimer' + IDLE_TIMEOUT_MS);
             if (idleTimer) clearTimeout(idleTimer);
-            if (localStorage.getItem('auto_signup_cookie')) {
+            if (isLoggedIn()) {
                 // 若正在倒數搶票監控中，保持不自動登出
-                if (!document.getElementById('countdownPage').classList.contains('d-none')) {
+                if (isCountdownActive()) {
                     return;
                 }
                 idleTimer = setTimeout(() => {
-                    autoLogout();
+                    autoLogout("⚠️ 由於您已超過 20 分鐘未進行任何操作，系統已自動登出。");
                 }, IDLE_TIMEOUT_MS);
             }
         }
@@ -568,7 +591,66 @@
             const now = Date.now();
             if (now - lastActivityTime > 5000) { // 避免高頻重置，每 5 秒最多更新一次
                 lastActivityTime = now;
+                if (isLoggedIn()) {
+                    localStorage.setItem('auto_signup_last_active_time', now.toString());
+                    localStorage.removeItem('auto_signup_last_leave_time');
+                }
                 resetIdleTimer();
+            }
+        }
+
+        function handlePageLeave() {
+            if (!isLoggedIn() || isCountdownActive()) {
+                return;
+            }
+            const now = Date.now();
+            localStorage.setItem('auto_signup_last_leave_time', now.toString());
+
+            // 啟動背景倒數計時（若瀏覽器分頁未被凍結）
+            if (leaveTimer) clearTimeout(leaveTimer);
+            leaveTimer = setTimeout(() => {
+                checkAndExecuteLeaveLogout();
+            }, LEAVE_TIMEOUT_MS);
+        }
+
+        function handlePageReturn() {
+            if (leaveTimer) {
+                clearTimeout(leaveTimer);
+                leaveTimer = null;
+            }
+
+            if (!isLoggedIn() || isCountdownActive()) {
+                return;
+            }
+
+            const leaveTimeStr = localStorage.getItem('auto_signup_last_leave_time');
+            if (leaveTimeStr) {
+                const leaveTime = parseInt(leaveTimeStr, 10);
+                const elapsed = Date.now() - leaveTime;
+                if (elapsed >= LEAVE_TIMEOUT_MS) {
+                    console.log(`[AutoLogout] 離開頁面已超過 ${Math.round(elapsed / 60000)} 分鐘，執行自動登出。`);
+                    autoLogout("⚠️ 由於您已離開頁面超過 20 分鐘，系統已自動登出。");
+                    return;
+                }
+            }
+
+            // 20 分鐘內返回：清除離開紀錄、更新活躍時間、重置閒置計時器
+            localStorage.removeItem('auto_signup_last_leave_time');
+            localStorage.setItem('auto_signup_last_active_time', Date.now().toString());
+            resetIdleTimer();
+        }
+
+        function checkAndExecuteLeaveLogout() {
+            if (!isLoggedIn() || isCountdownActive()) {
+                return;
+            }
+            const leaveTimeStr = localStorage.getItem('auto_signup_last_leave_time');
+            if (leaveTimeStr) {
+                const leaveTime = parseInt(leaveTimeStr, 10);
+                if (Date.now() - leaveTime >= LEAVE_TIMEOUT_MS) {
+                    console.log(`[AutoLogout] 背景計時器觸發：離開頁面超過 20 分鐘，執行自動登出。`);
+                    autoLogout("⚠️ 由於您已離開頁面超過 20 分鐘，系統已自動登出。");
+                }
             }
         }
 
@@ -578,10 +660,37 @@
             });
         }
 
-        function autoLogout() {
-            if (idleTimer) clearTimeout(idleTimer);
+        function setupPageLifecycleListeners() {
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'hidden') {
+                    handlePageLeave();
+                } else if (document.visibilityState === 'visible') {
+                    handlePageReturn();
+                }
+            });
+
+            window.addEventListener('pagehide', () => {
+                handlePageLeave();
+            });
+
+            window.addEventListener('beforeunload', () => {
+                handlePageLeave();
+            });
+        }
+
+        function autoLogout(reason) {
+            if (idleTimer) {
+                clearTimeout(idleTimer);
+                idleTimer = null;
+            }
+            if (leaveTimer) {
+                clearTimeout(leaveTimer);
+                leaveTimer = null;
+            }
             localStorage.removeItem('auto_signup_cookie');
             localStorage.removeItem('auto_signup_auth_info');
+            localStorage.removeItem('auto_signup_last_leave_time');
+            localStorage.removeItem('auto_signup_last_active_time');
             stopAutoReloginTimer();
             validatedCookieHeader = "";
 
@@ -596,12 +705,13 @@
             loginBtn.disabled = false;
             loginBtn.innerText = "🔑 執行登入與驗證";
 
+            const message = reason || "⚠️ 由於您已離開頁面超過 20 分鐘，系統已自動登出。";
             const statusAlert = document.getElementById('loginStatusAlert');
             statusAlert.className = "alert alert-warning mt-3";
-            statusAlert.innerText = "⚠️ 由於您已超過 30 分鐘未進行任何操作，系統已自動登出。";
+            statusAlert.innerText = message;
             statusAlert.classList.remove('d-none');
 
-            alert("⚠️ 由於您已超過 30 分鐘未進行任何操作，系統已自動登出。");
+            alert(message);
         }
 
         window.onload = function () {
@@ -617,10 +727,29 @@
             document.getElementById('datetimePicker').value = localIsoString;
 
             setupActivityListeners();
+            setupPageLifecycleListeners();
 
             // 檢查是否有暫存的登入 Cookie 憑證
             const savedCookie = localStorage.getItem('auto_signup_cookie');
             if (savedCookie) {
+                // 檢查是否已離開頁面超過 20 分鐘
+                const leaveTimeStr = localStorage.getItem('auto_signup_last_leave_time');
+                const activeTimeStr = localStorage.getItem('auto_signup_last_active_time');
+                const lastRecordedTime = Math.max(
+                    parseInt(leaveTimeStr || '0', 10),
+                    parseInt(activeTimeStr || '0', 10)
+                );
+
+                if (lastRecordedTime > 0 && (Date.now() - lastRecordedTime >= LEAVE_TIMEOUT_MS)) {
+                    console.log(`[AutoLogout] 重新載入時偵測到離開頁面已超過 20 分鐘，執行自動登出。`);
+                    autoLogout("⚠️ 由於您已離開頁面超過 20 分鐘，系統已自動登出。");
+                    return;
+                }
+
+                // 未超過 20 分鐘，清除離開時間紀錄並恢復登入狀態
+                localStorage.removeItem('auto_signup_last_leave_time');
+                localStorage.setItem('auto_signup_last_active_time', Date.now().toString());
+
                 validatedCookieHeader = savedCookie;
                 document.getElementById('loginPage').classList.add('d-none');
                 document.getElementById('setupPage').classList.remove('d-none');
@@ -644,9 +773,18 @@
 
         function logoutSession() {
             if (confirm("確定要登出系統嗎？")) {
-                if (idleTimer) clearTimeout(idleTimer);
+                if (idleTimer) {
+                    clearTimeout(idleTimer);
+                    idleTimer = null;
+                }
+                if (leaveTimer) {
+                    clearTimeout(leaveTimer);
+                    leaveTimer = null;
+                }
                 localStorage.removeItem('auto_signup_cookie');
                 localStorage.removeItem('auto_signup_auth_info');
+                localStorage.removeItem('auto_signup_last_leave_time');
+                localStorage.removeItem('auto_signup_last_active_time');
                 stopAutoReloginTimer();
                 validatedCookieHeader = "";
                 document.getElementById('setupPage').classList.add('d-none');
@@ -708,6 +846,8 @@
                     validatedCookieHeader = result.cookieHeader;
                     localStorage.setItem('auto_signup_cookie', validatedCookieHeader);
                     localStorage.setItem('auto_signup_auth_info', JSON.stringify(authPayload));
+                    localStorage.setItem('auto_signup_last_active_time', Date.now().toString());
+                    localStorage.removeItem('auto_signup_last_leave_time');
                     startAutoReloginTimer();
                     resetIdleTimer();
 
