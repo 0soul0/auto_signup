@@ -112,7 +112,7 @@ app.post('/api/login', async (req: Request, res: Response) => {
 // 階段 2：接收表單並載入記憶體暫存
 app.post('/api/process-submission', upload.single('excelFile'), async (req: Request, res: Response) => {
     const taskId = "TASK_" + Date.now();
-
+    executionLogs.splice(0, executionLogs.length);
     try {
         const file = req.file;
         if (!file) {

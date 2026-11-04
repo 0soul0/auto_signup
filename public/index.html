@@ -474,7 +474,7 @@
     </div>
 
     <script>
-        const VERSION = "v1.0.8";
+        const VERSION = "v1.0.9";
 
         let timerInterval = null;
         let logPollingInterval = null;
@@ -1010,6 +1010,7 @@
                     if (logs && logs.length > 0) {
                         logs.forEach(msg => appendLog(msg));
                     }
+                   
                 } catch (err) {
                     console.error("輪詢 Log 錯誤:", err);
                 }
