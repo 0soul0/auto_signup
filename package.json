@@ -23,6 +23,6 @@
   "scripts": {
     "dev": "node --env-file=.env node_modules/tsx/dist/cli.mjs watch server.ts",
     "build": "tsc",
-    "start": "node server.js"
+    "start": "node --env-file=.env server.js"
   }
 }
