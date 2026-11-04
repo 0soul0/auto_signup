@@ -474,7 +474,7 @@
     </div>
 
     <script>
-        const VERSION = "v1.1.0";
+        const VERSION = "v1.1.1";
 
         let timerInterval = null;
         let logPollingInterval = null;
@@ -1026,7 +1026,7 @@
 
         // 觸發 Express 後端執行搶單
         async function triggerBackendSniper() {
-            document.getElementById('cancelBtn').disabled = true;
+            // document.getElementById('cancelBtn').disabled = true;
 
             try {
                 const response = await fetch('/api/execute-sniper', {
@@ -1058,6 +1058,12 @@
 
         function cancelTask() {
             if (confirm("確定要取消這次搶票任務嗎？")) {
+                fetch('/api/cancel', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ fileId, config: globalConfig, taskId })
+                });
+                
                 clearInterval(timerInterval);
                 stopLogPolling();
                 appendLog(`[${getNowTime()}] 🛑 使用者手動取消了任務。`);

@@ -5,14 +5,13 @@ import HttpAgent, { HttpsAgent } from 'agentkeepalive';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { readFile } from 'fs/promises';
-import * as fs from 'fs';
+import { cleanExpiredFromSupabase, deleteFromSupabase, getFromSupabase, saveToSupabase } from './supabaseCache.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const uploadDir = path.join(__dirname, 'temp_cache');
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
+// const uploadDir = path.join(__dirname, 'temp_cache');
+// if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -26,43 +25,14 @@ app.use(express.static(path.join(__dirname, 'public')));
 const TARGET_URL = "https://register.tpech.org/";
 const LOGIN_URL = "https://register.tpech.org/login";
 
-// 🔄 刪除所有超過 24 小時的檔案
-function cleanExpiredFiles() {
-  if (!fs.existsSync(uploadDir)) return;
 
-  const files = fs.readdirSync(uploadDir);
-  const now = Date.now();
-//   const twentyFourHours = 24 * 60 * 60 * 1000; // 24小時的毫秒數
-  const twentyFourHours = 24 * 60 * 60 * 1000; // 24小時的毫秒數
 
-  let deletedCount = 0;
-
-  files.forEach(file => {
-    const filePath = path.join(uploadDir, file);
-    try {
-      const stats = fs.statSync(filePath);
-      
-      // 檢查是否超過 24 小時
-      if (now - stats.mtimeMs > twentyFourHours) {
-        fs.unlinkSync(filePath);
-        deletedCount++;
-        console.log(`[Auto Clean] 已自動刪除過期檔案: ${file}`);
-      }
-    } catch (error) {
-      console.error(`檢查或刪除檔案失敗 (${file}):`, error);
-    }
-  });
-
-  if (deletedCount > 0) {
-    console.log(`[Auto Clean] 總共清除了 ${deletedCount} 個超過 24 小時的檔案。`);
-  }
-}
-
-// 💡 建議：當程式啟動時立刻執行一次清理
-cleanExpiredFiles();
-
-// 💡 選用：讓伺服器每隔 12 小時自動檢查並清理一次過期檔案
-setInterval(cleanExpiredFiles, 13 * 60 * 60 * 1000);
+// 💡 伺服器啟動時立刻清理一次過期檔案
+cleanExpiredFromSupabase();
+// 💡 選用：讓伺服器每隔 1 小時自動清理一次 Supabase 內的過期資料
+setInterval(() => {
+  cleanExpiredFromSupabase();
+}, 24 * 60 * 60 * 1000);
 
 
 // ⚡ 效能優化：啟用 Keep-Alive 重用 TCP/TLS 連線，節省 30ms 握手耗時
@@ -73,44 +43,7 @@ const keepaliveAgent = {
 
 // 記憶體快取 (替代 GAS 的 CacheService)
 const logCache = new Map<string, string[]>();
-// const fileCache = new Map<string, Buffer>();
-
-// 儲存檔案
-function saveToDisk(key: string, buffer: Buffer) {
-  const filePath = path.join(uploadDir, key);
-  fs.writeFileSync(filePath, buffer);
-}
-
-function getFromDisk(key: string): Buffer | null {
-  const filePath = path.join(uploadDir, key);
-  if (fs.existsSync(filePath)) {
-    // 檢查檔案是否超過 24 小時
-    const stats = fs.statSync(filePath);
-    const hoursPassed = (Date.now() - stats.mtimeMs) / (1000 * 60 * 60);
-    if (hoursPassed > 24) {
-      fs.unlinkSync(filePath); // 超過 24 小時就刪除
-      return null;
-    }
-    return fs.readFileSync(filePath);
-  }
-  return null;
-}
-
-
-// 🆕 新增：手動刪除檔案
-function deleteFromDisk(key: string): boolean {
-  const filePath = path.join(uploadDir, key);
-  if (fs.existsSync(filePath)) {
-    try {
-      fs.unlinkSync(filePath); // 刪除檔案
-      return true; // 刪除成功
-    } catch (error) {
-      console.error(`刪除檔案失敗 (${key}):`, error);
-      return false; // 刪除失敗
-    }
-  }
-  return false; // 檔案原本就不存在
-}
+const cancelledTasks = new Set<string>();
 
 function writeLogToCache(taskId: string, msg: string) {
     if (!taskId) return;
@@ -206,7 +139,11 @@ app.post('/api/process-submission', upload.single('excelFile'), async (req: Requ
 
         const fileId = "FILE_" + Date.now();
         // fileCache.set(fileId, file.buffer);
-        saveToDisk(fileId,file.buffer);
+        const isSuccess = await saveToSupabase(fileId,file.buffer);
+        
+        if (!isSuccess) {
+            return res.json({ success: false, error: "儲存快取失敗，請檢查 Supabase 連線或設定", logs: executionLogs });
+        }
 
         const config = {
             retryInterval: req.body.retryInterval,
@@ -244,7 +181,7 @@ app.post('/api/execute-sniper', async (req: Request, res: Response) => {
     const churchId = config.churchId || req.body.churchId;
     const retryInterval = config.retryInterval || req.body.retryInterval;
     const retryCount = config.retryCount || req.body.retryCount;
-    const excelBuffer = getFromDisk(fileId);
+    const excelBuffer =await getFromSupabase(fileId);
     // const excelBuffer = fileCache.get(fileId) || (fileId ? fileCache.get(taskId) : undefined);
 
     pushLog(taskId, "START", "🚀 開始執行後端秒殺連擊...");
@@ -265,6 +202,14 @@ app.post('/api/execute-sniper', async (req: Request, res: Response) => {
         for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
             pushLog(taskId, "INFO", "    ");
             pushLog(taskId, "INFO", `🚀 第 ${attempt} 次嘗試搶票...`);
+            
+            // 💡 1. 每次迴圈開始前，檢查是否被手動取消
+            if (cancelledTasks.has(fileId)) {
+                pushLog(fileId, "CANCEL", `🛑 任務 ${fileId} 已被使用者中斷。`);
+                cancelledTasks.delete(fileId); // 清理記憶體
+                return res.json({ success: true, message: "任務已取消", logs: executionLogs });
+            }
+
 
             if (!conferenceSlug) {
                 pushLog(taskId, "INFO", "🔍 正在向首頁請求最新 Slug...");
@@ -381,7 +326,7 @@ app.post('/api/execute-sniper', async (req: Request, res: Response) => {
             }
         }
 
-        deleteFromDisk(fileId)
+        deleteFromSupabase(fileId)
         return res.json({ success: isSuccess, logs: executionLogs });
 
     } catch (e: any) {
@@ -390,6 +335,19 @@ app.post('/api/execute-sniper', async (req: Request, res: Response) => {
     }
 });
 
+
+app.post('/api/cancel', async (req: Request, res: Response) =>{
+    const fileId = req.body.fileId as string;
+    if (fileId) {
+        cancelledTasks.add(fileId);
+        console.log(`[Task Cancelled] 任務已被標記取消: ${fileId}`);
+    }
+    try{
+        deleteFromSupabase(fileId)
+    }catch (e:any){
+
+    }
+})
 
 async function fetchLatestConferenceSlug(cookieHeader: string): Promise<string | null> {
     try {
